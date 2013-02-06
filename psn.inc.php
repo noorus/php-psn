@@ -1,42 +1,46 @@
 <?php
 
+  // psn client for php » noorus 2013
+
+  declare( encoding = 'UTF-8' );
+
+  namespace PSN;
+
+  mb_internal_encoding( 'UTF-8' );
+  setlocale( LC_ALL, 'en_US.UTF-8' );
+
+  require( 'util.quickxml.inc.php' );
   require( 'vendor/autoload.php' );
+
+  define( 'PSN_Platform_PS3', 0 );
 
   define( 'PSN_Region_EU', 0 );
   define( 'PSN_Region_US', 1 );
   define( 'PSN_Region_JP', 2 );
 
-  class QuickXML
+  class Exception extends \Exception
   {
-    protected $_xml = null;
-    private $_resolve = array( 'start' => 'startElement', 'end' => 'endElement', 'attribute' => 'writeAttribute', 'element' => 'writeElement' );
-    public function __construct()
+    public function __construct( $message = null, $code = 0, \Exception $previous = null )
     {
-      $this->_xml = new XMLWriter();
-      $this->_xml->openMemory();
-      $this->_xml->setIndent( false );
-      $this->_xml->startDocument( '1.0', 'utf-8' );
-    }
-    public function __call( $method, $args )
-    {
-      if ( isset( $this->_resolve[$method] ) )
-        $method = $this->_resolve[$method];
-      if ( !call_user_func_array( array( $this->_xml, $method ), $args ) )
-        throw new Exception( 'XMLWriter call failed: '.$method );
-      return $this;
-    }
-    public function done()
-    {
-      $this->_xml->endDocument();
-      $ret = $this->_xml->outputMemory( true );
-      unset( $this );
-      return $ret;
+      parent::__construct( $message, $code, $previous );
     }
   }
 
-  class PSNClient
+  class User
   {
-    const Platform          = 'ps3';
+    protected $mJID = null;
+    public function __construct( $jid )
+    {
+      $this->mJID = $jid;
+    }
+    public function getJID()
+    {
+      return $this->mJID;
+    }
+  }
+
+  class Client
+  {
     const Agent_Community   = 'PS3Community-agent/1.0.0 libhttp/1.0.0';
     const Agent_Application = 'PS3Application libhttp/3.5.5-000 (CellOS)';
     const URL_jidSearch     = 'http://searchjid.%s.np.community.playstation.net/basic_view/func/search_jid';
@@ -45,11 +49,19 @@
     const URL_UpdateList    = 'http://fus01.ps3.update.playstation.net/update/ps3/list/eu/ps3-updatelist.txt';
     protected $mClient = null;
     protected $mFirmware = null;
+    protected $mPlatform = null;
     protected $mRealms = null;
     protected $mRegions = null;
-    public function __construct()
+    protected $mPlatforms = null;
+    public function __construct( $platform = PSN_Platform_PS3 )
     {
-      $this->mClient = new Guzzle\Http\Client();
+      $this->mClient = new \Guzzle\Http\Client();
+      $this->mPlatforms = array(
+        PSN_Platform_PS3 => array( 'code' => 'ps3' )
+      );
+      if ( !isset( $this->mPlatforms[$platform] ) )
+        throw new Exception( 'Invalid platform' );
+      $this->mPlatform =& $this->mPlatforms[$platform];
       $this->mRegions = array(
         PSN_Region_EU => array( 'code' => 'eu' ),
         PSN_Region_US => array( 'code' => 'usa' ),
@@ -114,11 +126,12 @@
       $request->setUrl( $this->makeRegionURL( $region, self::URL_jidSearch ) );
       $this->setRequestRealm( $request, 'community' );
       $request->addHeader( 'Content-Type', 'text/xml; charset=UTF-8' );
-      $xml = new QuickXML();
-      $xml->start( 'searchjid' )->attribute( 'platform', self::Platform )->attribute( 'sv', $this->mFirmware )->element( 'online-id', $psnID )->end();
+      $xml = new \Util\QuickXML();
+      $xml->start( 'searchjid' )->attribute( 'platform', $this->mPlatform['code'] )->attribute( 'sv', $this->mFirmware )->element( 'online-id', $psnID )->end();
       $request->setBody( $xml->done() );
       $response = $request->send();
-      var_dump( $response->getMessage() );
+      $result = simplexml_load_string( (string)$response->getBody() );
+      var_dump( $result );
     }
     public function __destruct()
     {

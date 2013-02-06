@@ -3,4 +3,4 @@
   require( 'psn.inc.php' );
 
   $psn = new PSN\Client();
-  $psn->findJID( 'noorutin', PSN_Region_EU );
+  $psn->findJID( 'salakala', PSN_Region_EU );
