@@ -8,11 +8,10 @@
 
   mb_internal_encoding( 'UTF-8' );
   setlocale( LC_ALL, 'en_US.UTF-8' );
+  libxml_use_internal_errors( true );
 
   require( 'util.quickxml.inc.php' );
   require( 'vendor/autoload.php' );
-
-  define( 'PSN_Platform_PS3', 0 );
 
   define( 'PSN_Region_EU', 0 );
   define( 'PSN_Region_US', 1 );
@@ -28,10 +27,56 @@
 
   class User
   {
+    protected $mOwner = null;
     protected $mJID = null;
-    public function __construct( $jid )
+    protected $mHasProfile = false;
+    protected $mName = null;
+    protected $mCountry = null;
+    protected $mAboutMe = null;
+    protected $mAvatar = null;
+    public function __construct( $owner, $jid )
     {
+      if ( !( $owner instanceof Client ) )
+        throw new Exception( 'Owner is not an instance of client' );
+      $this->mOwner = $owner;
       $this->mJID = $jid;
+      $this->_getProfile();
+    }
+    protected function _getProfile()
+    {
+      $xml = $this->mOwner->_executeProfileRequest( $this->mJID );
+      if ( isset( $xml['result'] ) )
+      {
+        $result = hexdec( (string)$xml['result'] );
+        switch ( $result )
+        {
+          case 0x0D: // not found
+            $this->mHasProfile = false;
+          break;
+          case 0x00: // found
+            $this->mHasProfile = true;
+            if ( isset( $xml->onlinename ) && mb_strlen( (string)$xml->onlinename ) > 0 )
+              $this->mName = (string)$xml->onlinename;
+            if ( isset( $xml->country ) && mb_strlen( (string)$xml->country ) > 0 )
+              $this->mCountry = (string)$xml->country;
+            if ( isset( $xml->aboutme ) && mb_strlen( (string)$xml->aboutme ) > 0 )
+              $this->mAboutMe = (string)$xml->aboutme;
+            if ( isset( $xml->avatarurl ) )
+            {
+              $avatar = array();
+              if ( isset( $xml->avatarurl['id'] ) )
+                $avatar['id'] = (int)$xml->avatarurl['id'];
+              if ( mb_strlen( (string)$xml->avatarurl ) > 0 )
+                $avatar['url'] = (string)$xml->avatarurl;
+              $this->mAvatar = $avatar;
+            }
+          break;
+          default:
+            throw new Exception( 'Unknown return code for profile search request: '.$result );
+          break;
+        }
+      } else
+        throw new Exception( 'Cannot parse XML from profile search request' );
     }
     public function getJID()
     {
@@ -41,27 +86,20 @@
 
   class Client
   {
+    const Platform          = 'ps3';
     const Agent_Community   = 'PS3Community-agent/1.0.0 libhttp/1.0.0';
     const Agent_Application = 'PS3Application libhttp/3.5.5-000 (CellOS)';
     const URL_jidSearch     = 'http://searchjid.%s.np.community.playstation.net/basic_view/func/search_jid';
-    const Host_Profile      = 'http://getprof.us.np.community.playstation.net';
+    const URL_getProfile    = 'http://getprof.us.np.community.playstation.net/basic_view/func/get_profile';
     const Host_Trophy       = 'http://trophy.ww.np.community.playstation.net';
     const URL_UpdateList    = 'http://fus01.ps3.update.playstation.net/update/ps3/list/eu/ps3-updatelist.txt';
     protected $mClient = null;
     protected $mFirmware = null;
-    protected $mPlatform = null;
     protected $mRealms = null;
     protected $mRegions = null;
-    protected $mPlatforms = null;
-    public function __construct( $platform = PSN_Platform_PS3 )
+    public function __construct()
     {
       $this->mClient = new \Guzzle\Http\Client();
-      $this->mPlatforms = array(
-        PSN_Platform_PS3 => array( 'code' => 'ps3' )
-      );
-      if ( !isset( $this->mPlatforms[$platform] ) )
-        throw new Exception( 'Invalid platform' );
-      $this->mPlatform =& $this->mPlatforms[$platform];
       $this->mRegions = array(
         PSN_Region_EU => array( 'code' => 'eu' ),
         PSN_Region_US => array( 'code' => 'usa' ),
@@ -120,18 +158,62 @@
     {
       return $this->mFirmware;
     }
-    public function findJID( $psnID, $region )
+    public function _executeProfileRequest( $jid )
+    {
+      $request = $this->mClient->post();
+      $request->setUrl( self::URL_getProfile );
+      $this->setRequestRealm( $request, 'community' );
+      $request->addHeader( 'Content-Type', 'text/xml; charset=UTF-8' );
+      $xml = new \Util\QuickXML();
+      $xml->start( 'profile' )->attribute( 'platform', self::Platform )->attribute( 'sv', $this->mFirmware )->element( 'jid', $jid )->end();
+      $request->setBody( $xml->done() );
+      $response = $request->send();
+      $returnXml = simplexml_load_string( (string)$response->getBody() );
+      if ( $returnXml === false )
+        throw new Exception( 'Invalid XML returned for profile search request' );
+      return $returnXml;
+    }
+    public function _executeIDResolveRequest( $psnID, $region )
     {
       $request = $this->mClient->post();
       $request->setUrl( $this->makeRegionURL( $region, self::URL_jidSearch ) );
       $this->setRequestRealm( $request, 'community' );
       $request->addHeader( 'Content-Type', 'text/xml; charset=UTF-8' );
       $xml = new \Util\QuickXML();
-      $xml->start( 'searchjid' )->attribute( 'platform', $this->mPlatform['code'] )->attribute( 'sv', $this->mFirmware )->element( 'online-id', $psnID )->end();
+      $xml->start( 'searchjid' )->attribute( 'platform', self::Platform )->attribute( 'sv', $this->mFirmware )->element( 'online-id', $psnID )->end();
       $request->setBody( $xml->done() );
       $response = $request->send();
-      $result = simplexml_load_string( (string)$response->getBody() );
-      var_dump( $result );
+      $returnXml = simplexml_load_string( (string)$response->getBody() );
+      if ( $returnXml === false )
+        throw new Exception( 'Invalid XML returned for JID search request' );
+      return $returnXml;
+    }
+    public function findUsersByName( $psnID, $region )
+    {
+      $xml = $this->_executeIDResolveRequest( $psnID, $region );
+      if ( isset( $xml['result'] ) )
+      {
+        $result = hexdec( (string)$xml['result'] );
+        switch ( $result )
+        {
+          case 0x1B: // nothing found
+            return array();
+          break;
+          case 0x00: // found something
+            $users = array();
+            foreach ( $xml->jid as $jid )
+            {
+              $user = new User( $this, (string)$jid );
+              $users[] = $user;
+            }
+            return $users;
+          break;
+          default: // unknown - error out
+            throw new Exception( 'JID search returned unknown result code '.$result );
+          break;
+        }
+      } else
+        throw new Exception( 'Cannot parse XML from JID search request' );
     }
     public function __destruct()
     {
