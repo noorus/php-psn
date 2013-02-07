@@ -41,6 +41,11 @@
       $this->mOwner = $owner;
       $this->mJID = $jid;
       $this->_getProfile();
+      $this->_getTrophies();
+    }
+    protected function _getTrophies()
+    {
+      $xml = $this->mOwner->_executeTrophiesRequest( $this->mJID );
     }
     protected function _getProfile()
     {
@@ -78,10 +83,12 @@
       } else
         throw new Exception( 'Cannot parse XML from profile search request' );
     }
-    public function getJID()
-    {
-      return $this->mJID;
-    }
+    public function getJID() { return $this->mJID; }
+    public function hasProfile() { return $this->mHasProfile; }
+    public function getName() { return $this->mName; }
+    public function getCountry() { return $this->mCountry; }
+    public function getAboutMe() { return $this->mAboutMe; }
+    public function getAvatar() { return $this->mAvatar; }
   }
 
   class Client
@@ -91,7 +98,7 @@
     const Agent_Application = 'PS3Application libhttp/3.5.5-000 (CellOS)';
     const URL_jidSearch     = 'http://searchjid.%s.np.community.playstation.net/basic_view/func/search_jid';
     const URL_getProfile    = 'http://getprof.us.np.community.playstation.net/basic_view/func/get_profile';
-    const Host_Trophy       = 'http://trophy.ww.np.community.playstation.net';
+    const URL_getTrophies   = 'http://trophy.ww.np.community.playstation.net/trophy/func/get_user_info';
     const URL_UpdateList    = 'http://fus01.ps3.update.playstation.net/update/ps3/list/eu/ps3-updatelist.txt';
     protected $mClient = null;
     protected $mFirmware = null;
@@ -171,6 +178,24 @@
       $returnXml = simplexml_load_string( (string)$response->getBody() );
       if ( $returnXml === false )
         throw new Exception( 'Invalid XML returned for profile search request' );
+      return $returnXml;
+    }
+    public function _executeTrophiesRequest( $jid )
+    {
+      $request = $this->mClient->post();
+      $request->setUrl( self::URL_getTrophies );
+      $this->setRequestRealm( $request, 'community' );
+      $request->addHeader( 'Content-Type', 'text/xml; charset=UTF-8' );
+      $xml = new \Util\QuickXML();
+      $xml->start( 'nptrophy' )->attribute( 'platform', self::Platform )->attribute( 'sv', $this->mFirmware );
+      $xml->element( 'jid', $jid );
+      $xml->end();
+      $request->setBody( $xml->done() );
+      $response = $request->send();
+var_dump( (string)$response->getMessage() );
+      $returnXml = simplexml_load_string( (string)$response->getBody() );
+      if ( $returnXml === false )
+        throw new Exception( 'Invalid XML returned for trophy search request' );
       return $returnXml;
     }
     public function _executeIDResolveRequest( $psnID, $region )
