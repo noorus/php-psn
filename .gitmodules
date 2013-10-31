@@ -1,0 +1,3 @@
+[submodule "php-radutils"]
+	path = php-radutils
+	url = git://github.com/noorus/php-radutils.git
