@@ -10,7 +10,6 @@
   setlocale( LC_ALL, 'en_US.UTF-8' );
   libxml_use_internal_errors( true );
 
-  require( 'util.quickxml.inc.php' );
   require( 'vendor/autoload.php' );
 
   define( 'PSN_Region_EU', 0 );
@@ -171,7 +170,7 @@
       $request->setUrl( self::URL_getProfile );
       $this->setRequestRealm( $request, 'community' );
       $request->addHeader( 'Content-Type', 'text/xml; charset=UTF-8' );
-      $xml = new \Util\QuickXML();
+      $xml = new \Util\XMLOut();
       $xml->start( 'profile' )->attribute( 'platform', self::Platform )->attribute( 'sv', $this->mFirmware )->element( 'jid', $jid )->end();
       $request->setBody( $xml->done() );
       $response = $request->send();
@@ -186,13 +185,13 @@
       $request->setUrl( self::URL_getTrophies );
       $this->setRequestRealm( $request, 'community' );
       $request->addHeader( 'Content-Type', 'text/xml; charset=UTF-8' );
-      $xml = new \Util\QuickXML();
+      $xml = new \Util\XMLOut();
       $xml->start( 'nptrophy' )->attribute( 'platform', self::Platform )->attribute( 'sv', $this->mFirmware );
       $xml->element( 'jid', $jid );
       $xml->end();
       $request->setBody( $xml->done() );
       $response = $request->send();
-var_dump( (string)$response->getMessage() );
+      // var_dump( (string)$response->getMessage() );
       $returnXml = simplexml_load_string( (string)$response->getBody() );
       if ( $returnXml === false )
         throw new Exception( 'Invalid XML returned for trophy search request' );
